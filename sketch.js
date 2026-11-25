@@ -39,6 +39,7 @@ let skies = [];
 let skiesLightMaps = [];
 let grassModel;
 let treeModel;
+let shroomModels;
 let rockModels = [];
 let titleModel;
 let font;
@@ -77,7 +78,12 @@ let shared;
 let lastFov = -1000;
 let skyCollide = false;
 let world;
+let waterColor;
+let grassColor;
+let shroomColors = {};
+let treeColors = {};
 const TERRAINHEIGHT = 2000;
+const WATER_LEVEL = 0;
 const TERRAINRES = 200;
 const MOD = 0.0002;
 
@@ -117,7 +123,7 @@ class World {
     this.trees = [];
     let numTree = Math.floor(random(size / 200, size / 100));
     
-    // Add trees with random dimensions
+    // Add trees with random dimensions, only above water level
     for (let i = 0; i < numTree; i++) {
       let tree = {};
       tree.scale = random(800, 1500) / treeModel.trunk.calculateBoundingBox().size.y;
@@ -125,7 +131,7 @@ class World {
       tree.x = Math.floor(random(-size / TERRAINRES, size / TERRAINRES)) * TERRAINRES;
       tree.z = Math.floor(random(-size / TERRAINRES, size / TERRAINRES)) * TERRAINRES;
       tree.y = noise((tree.x + size) * MOD, (tree.z + size) * MOD) * TERRAINHEIGHT - TERRAINHEIGHT / 2;
-      if (tree.y <= 0 && !this.spots.has(String([tree.x, tree.z]))) {
+      if (tree.y <= WATER_LEVEL && !this.spots.has(String([tree.x, tree.z]))) {
         this.trees.push(tree);
         this.spots.add(String([tree.x, tree.z]));
       }
@@ -152,9 +158,38 @@ class World {
       }
     }
 
+    // Setup mushrooms
+    this.shrooms = [];
+    let numShroom = Math.floor(random(size / 60, size / 30));
+
+    // Add mushrooms, with different models based on their elevation
+    for (let i = 0; i < numShroom; i++) {
+      let shroom = {};
+      
+      shroom.x = Math.floor(random(-size / TERRAINRES, size / TERRAINRES)) * TERRAINRES;
+      shroom.z = Math.floor(random(-size / TERRAINRES, size / TERRAINRES)) * TERRAINRES;
+      shroom.y = noise((shroom.x + size) * MOD, (shroom.z + size) * MOD) * TERRAINHEIGHT - TERRAINHEIGHT / 2;
+
+      if (shroom.y <= WATER_LEVEL) {
+        if (shroom.y > -TERRAINHEIGHT / 6) {
+          shroom.model = "tall";
+        }
+        else if (shroom.y > -TERRAINHEIGHT / 3) {
+          shroom.model = "round";
+        }
+        else {
+          shroom.model = "flat";
+        }
+
+        this.shrooms.push(shroom);
+      }
+    }
+    
+
     // Setup grass
     this.grass = [];
 
+    // Add grass to some high spots
     for (let i = -size; i < size; i += TERRAINRES / 1.5) {
       for (let j = -size; j < size; j += TERRAINRES / 1.5) {
         let ground = noise((i + size) * MOD, (j + size) * MOD) * TERRAINHEIGHT - TERRAINHEIGHT / 2;
@@ -179,7 +214,7 @@ async function setup() {
     "world"
   );
   
-  shared = await partyLoadShared("shared", { seed: 0, trees: [], rocks: [], sky: -1, chat: [] });
+  shared = await partyLoadShared("shared", { seed: 0, trees: [], shrooms: [], rocks: [], grass: [], sky: -1, chat: [] });
   my = await partyLoadMyShared(my);
   guests = await partyLoadGuestShareds();
 
@@ -197,6 +232,12 @@ async function setup() {
     rockModels.push(await loadModel(`assets/rock_d_0${i}.obj`));
   }
 
+  shroomModels = {
+    flat: await loadModel("assets/shrooms_flat.obj", true),
+    round: await loadModel("assets/shrooms_round.obj", true),
+    tall: await loadModel("assets/shrooms_tall.obj", true),
+  };
+
   treeModel = {
     trunk: await loadModel("assets/MapleTreeStem.obj"),
     leaves: await loadModel("assets/MapleTreeLeaves.obj"),
@@ -207,6 +248,17 @@ async function setup() {
   createCanvas(windowWidth, windowHeight, WEBGL);
 
   angleMode(DEGREES);
+
+  waterColor = color(0, 0, 255, 180);
+
+  grassColor = color(50, 110, 30);
+
+  shroomColors.tall = color(69, 77, 33);
+  shroomColors.round = color(219, 13, 27);
+  shroomColors.flat = color(184, 145, 94);
+  
+  treeColors.trunk = color(80, 50, 10);
+  treeColors.leaves = color(40, 100, 40);
 
   titleModel = font.textToModel("HIDE-N-SEEK", 0, 0, { extrude: 2, sampleFactor: 3 });
   titleModel.normalize();
@@ -227,7 +279,9 @@ async function setup() {
   world = new World(RENDER_DISTANCE);
   if (partyIsHost()) {
     shared.trees = world.trees;
+    shared.shrooms = world.shrooms;
     shared.rocks = world.rocks;
+    shared.grass = world.grass;
   }
 
   my.color = COMMON_WEB_COLORS[Math.floor(Math.random() * COMMON_WEB_COLORS.length)];
@@ -516,21 +570,31 @@ function drawFlora() {
     translate(tree.x, tree.y, tree.z);
     rotateX(180);
     scale(tree.scale);
-    fill(80, 50, 10);
+    fill(treeColors.trunk);
     model(treeModel.trunk);
 
     // Leaves
-    fill(40, 100, 40);
+    fill(treeColors.leaves);
     model(treeModel.leaves);
     pop();
     
   }
 
-  // Draw grass
-  for (let i = 0; i < world.grass.length; i++) {
+  // Draw mushrooms
+  for (let i = 0; i < shared.shrooms.length; i++) {
     push();
-    translate(world.grass[i].x, world.grass[i].y, world.grass[i].z);
-    fill(50, 110, 30);
+    translate(shared.shrooms[i].x, shared.shrooms[i].y, shared.shrooms[i].z);
+    rotateX(180);
+    fill(shroomColors[shared.shrooms[i].model]);
+    model(shroomModels[shared.shrooms[i].model]);
+    pop();
+  }
+
+  // Draw grass
+  for (let i = 0; i < shared.grass.length; i++) {
+    push();
+    translate(shared.grass[i].x, shared.grass[i].y, shared.grass[i].z);
+    fill(grassColor);
     model(grassModel);
     pop();
   }
@@ -566,7 +630,8 @@ function drawPeople() {
 
 function drawWater() {
   push();
-  fill(0, 0, 255, 180);
+  fill(waterColor);
+  translate(0, WATER_LEVEL, 0);
   rotateX(-90);
   plane(RENDER_DISTANCE * 2);
   pop();

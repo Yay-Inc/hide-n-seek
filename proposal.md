@@ -1,7 +1,7 @@
 # Proposal
 
 ## Description
-A multiplayer 3D hide and seek game in a generated world
+A multiplayer 3D hide and seek game in a seed-generated world
 
 ## Needs to have:
 - Movement (done)
